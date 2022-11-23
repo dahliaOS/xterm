@@ -51,8 +51,7 @@ class CustomTextEdit extends StatefulWidget {
   CustomTextEditState createState() => CustomTextEditState();
 }
 
-class CustomTextEditState extends State<CustomTextEdit>
-    implements TextInputClient {
+class CustomTextEditState extends State<CustomTextEdit> implements TextInputClient {
   TextInputConnection? _connection;
 
   @override
@@ -233,8 +232,7 @@ class CustomTextEditState extends State<CustomTextEdit>
     }
 
     // Reset editing state if composing is done
-    if (_currentEditingState.composing.isCollapsed &&
-        _currentEditingState.text != _initEditingState.text) {
+    if (_currentEditingState.composing.isCollapsed && _currentEditingState.text != _initEditingState.text) {
       _connection!.setEditingState(_initEditingState);
     }
   }
@@ -279,4 +277,10 @@ class CustomTextEditState extends State<CustomTextEdit>
   void showToolbar() {
     // print('showToolbar');
   }
+
+  @override
+  void didChangeInputControl(TextInputControl? oldControl, TextInputControl? newControl) {}
+
+  @override
+  void performSelector(String selectorName) {}
 }
