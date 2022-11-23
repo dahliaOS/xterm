@@ -1,11 +1,38 @@
-import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
+import 'package:example/src/platform_menu.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:xterm/flutter.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_acrylic/flutter_acrylic.dart';
+import 'package:flutter_pty/flutter_pty.dart';
 import 'package:xterm/xterm.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  if (isDesktop) {
+    setupAcrylic();
+  }
+
   runApp(MyApp());
+}
+
+bool get isDesktop {
+  if (kIsWeb) return false;
+  return [
+    TargetPlatform.windows,
+    TargetPlatform.linux,
+    TargetPlatform.macOS,
+  ].contains(defaultTargetPlatform);
+}
+
+Future<void> setupAcrylic() async {
+  await Window.initialize();
+  await Window.makeTitlebarTransparent();
+  await Window.setEffect(effect: WindowEffect.aero, color: Color(0xFFFFFFFF));
+  await Window.setBlurViewState(MacOSBlurViewState.active);
 }
 
 class MyApp extends StatelessWidget {
@@ -13,94 +40,104 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'xterm.dart demo',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-      ),
-      home: MyHomePage(),
+      debugShowCheckedModeBanner: false,
+      home: AppPlatformMenu(child: Home()),
+      // shortcuts: ,
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  MyHomePage({Key? key}) : super(key: key);
+class Home extends StatefulWidget {
+  Home({Key? key}) : super(key: key);
 
   @override
-  _MyHomePageState createState() => _MyHomePageState();
+  // ignore: library_private_types_in_public_api
+  _HomeState createState() => _HomeState();
 }
 
-class FakeTerminalBackend extends TerminalBackend {
-  final _exitCodeCompleter = Completer<int>();
-  // ignore: close_sinks
-  final _outStream = StreamController<String>();
-
-  @override
-  Future<int> get exitCode => _exitCodeCompleter.future;
-
-  @override
-  void init() {
-    _outStream.sink.add('xterm.dart demo');
-    _outStream.sink.add('\r\n');
-    _outStream.sink.add('\$ ');
-  }
-
-  @override
-  Stream<String> get out => _outStream.stream;
-
-  @override
-  void resize(int width, int height, int pixelWidth, int pixelHeight) {
-    // NOOP
-  }
-
-  @override
-  void write(String input) {
-    if (input.length <= 0) {
-      return;
-    }
-    // in a "real" terminal emulation you would connect onInput to the backend
-    // (like a pty or ssh connection) that then handles the changes in the
-    // terminal.
-    // As we don't have a connected backend here we simulate the changes by
-    // directly writing to the terminal.
-    if (input == '\r') {
-      _outStream.sink.add('\r\n');
-      _outStream.sink.add('\$ ');
-    } else if (input.codeUnitAt(0) == 127) {
-      // Backspace handling
-      _outStream.sink.add('\b \b');
-    } else {
-      _outStream.sink.add(input);
-    }
-  }
-
-  @override
-  void terminate() {
-    //NOOP
-  }
-
-  @override
-  void ackProcessed() {
-    //NOOP
-  }
-}
-
-class _MyHomePageState extends State<MyHomePage> {
+class _HomeState extends State<Home> {
   final terminal = Terminal(
-    backend: FakeTerminalBackend(),
     maxLines: 10000,
   );
 
-  void onInput(String input) {}
+  final terminalController = TerminalController();
+
+  late final Pty pty;
+
+  @override
+  void initState() {
+    super.initState();
+
+    WidgetsBinding.instance.endOfFrame.then(
+      (_) {
+        if (mounted) _startPty();
+      },
+    );
+  }
+
+  void _startPty() {
+    pty = Pty.start(
+      shell,
+      columns: terminal.viewWidth,
+      rows: terminal.viewHeight,
+    );
+
+    pty.output
+        .cast<List<int>>()
+        .transform(Utf8Decoder())
+        .listen(terminal.write);
+
+    pty.exitCode.then((code) {
+      terminal.write('the process exited with exit code $code');
+    });
+
+    terminal.onOutput = (data) {
+      pty.write(const Utf8Encoder().convert(data));
+    };
+
+    terminal.onResize = (w, h, pw, ph) {
+      pty.resize(h, w);
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.transparent,
       body: SafeArea(
         child: TerminalView(
-          terminal: terminal,
-          style: TerminalStyle(fontFamily: ['Cascadia Mono']),
+          terminal,
+          controller: terminalController,
+          autofocus: true,
+          backgroundOpacity: 0.7,
+          onSecondaryTapDown: (details, offset) async {
+            final selection = terminalController.selection;
+            if (selection != null) {
+              final text = terminal.buffer.getText(selection);
+              terminalController.clearSelection();
+              await Clipboard.setData(ClipboardData(text: text));
+            } else {
+              final data = await Clipboard.getData('text/plain');
+              final text = data?.text;
+              if (text != null) {
+                terminal.paste(text);
+              }
+            }
+          },
         ),
       ),
     );
   }
+}
+
+String get shell {
+  if (Platform.isMacOS || Platform.isLinux) {
+    return Platform.environment['SHELL'] ?? 'bash';
+  }
+
+  if (Platform.isWindows) {
+    return 'cmd.exe';
+  }
+
+  return 'sh';
 }

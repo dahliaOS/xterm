@@ -1,22 +1,32 @@
-// import 'dart:io';
-
-// import 'dart:typed_data';
-
-// import 'package:xterm/next/terminal_parser.dart';
+import 'package:xterm/src/terminal.dart';
 
 void main(List<String> args) async {
-  // if (args.isEmpty) {
-  //   print('Usage: xterm_bench <test_fixture>');
-  // }
+  final lines = 1000;
 
-  // final fixturePath = args[0];
-  // final fixture = await File(fixturePath).readAsBytes();
+  final terminal = Terminal(maxLines: lines);
 
-  // throw 'todo';
+  bench('write $lines lines', () {
+    for (var i = 0; i < lines; i++) {
+      terminal.write('https://github.com/TerminalStudio/dartssh2\r\n');
+    }
+  });
+
+  final regexp = RegExp(
+    r'[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)',
+  );
+
+  bench('search $lines line', () {
+    var count = 0;
+    for (var line in terminal.lines.toList()) {
+      final matches = regexp.allMatches(line.toString());
+      count += matches.length;
+    }
+    print('count: $count');
+  });
 }
 
-// void bench(Uint8List fixture) {
-//   final timer = Stopwatch()..start();
-//   final protocol = TerminalProtocol(handler)
-//   print('${end.difference(start).inMilliseconds}ms');
-// }
+void bench(String description, void Function() f) {
+  final sw = Stopwatch()..start();
+  f();
+  print('$description took ${sw.elapsedMilliseconds}ms');
+}

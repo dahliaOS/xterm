@@ -20,7 +20,7 @@ class _AppPlatformMenuState extends State<AppPlatformMenu> {
     }
 
     return PlatformMenuBar(
-      menus: <PlatformMenuItem>[
+      menus: <MenuItem>[
         PlatformMenu(
           label: 'TerminalStudio',
           menus: [
